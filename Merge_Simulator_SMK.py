@@ -240,18 +240,42 @@ def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
         v2.append(V2_next)
         xRel.append(XREL_next)
         tau.append(getTau(XREL_next,V1_next,V2_next))
-        d.append(startD - x2[-1])
+        d.append(d[-1] - (x2[-1]-x2[-2]))
 
     return x1,x2,v1,v2,xRel,tau,d
+
+def simulate_more(x1,x2,v1,v2,tau,xRel,d):
+    x1more = x1
+    x2more = x2
+    v1more = v1
+    v2more = v2
+    taumore = tau
+    xRelmore = xRel
+    dmore = d
+
+    for i in range(15):
+        action = 0
+        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action)
+        x1more.append(X1_next)
+        v1more.append(V1_next)
+        x2more.append(X2_next)
+        v2more.append(V2_next)
+        xRelmore.append(XREL_next)
+        taumore.append(getTau(XREL_next,V1_next,V2_next))
+        dmore.append(dmore[-1] - (x2more[-1]-x2more[-2]))
+
+    return x1more,x2more,v1more,v2more,xRelmore,taumore,dmore
+
 
 
 ###########################PLOTTING################################
 ###################################################################
-def animate(x1,x2,tau,xRel):
+def animate(x1,x2,tau,xRel,dmore):
     startX1 = x1[0]
     startX2 = x2[0]
     startY1 = 11
     startY2 = 7
+    startD = 114.5
 
     startlong1 = -4.86  # starting longitudinal GPS error (m)
     startlat1 = 1.87
@@ -305,7 +329,10 @@ def animate(x1,x2,tau,xRel):
 
         patch2.set_width(startlong2)  # length of car
         patch2.set_height(startlat2)  # width of car
-        patch2.set_xy([x2[i], startY2])  # location
+        if dmore[i] > 0:
+            patch2.set_xy([x2[i], startY2])  # location
+        else:
+            patch2.set_xy([x2[i], startY1])
 
         #Grass
         patch3.set_width(250)
@@ -324,7 +351,7 @@ def animate(x1,x2,tau,xRel):
         return patch2, patch1, patch3, patch4, label1, label2
 
 
-    anim = animation.FuncAnimation(fig, animate, init_func=init, frames=min(len(x1), len(x2)), interval=100, blit=True)
+    anim = animation.FuncAnimation(fig, animate, init_func=init, frames=min(len(x1), len(x2)), interval=250, blit=True)
 
     fig.set_size_inches(12, 6, forward=True)
     plt.show()
@@ -355,4 +382,5 @@ startD2 = 114.5       # starting distance from end (m)
 length2 = 4.86      # length of vehicle 2
 
 x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict)
-animate(x1,x2,tau,xRel)
+x1more,x2more,v1more,v2more,xRelmore,taumore,dmore = simulate_more(x1,x2,v1,v2,tau,xRel,d)
+animate(x1more,x2more,taumore,xRelmore,dmore)
