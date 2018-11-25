@@ -10,14 +10,26 @@ from scipy.interpolate import RegularGridInterpolator
 ###################################FUNCTIONS#########################################
 #####################################################################################
 
-def getNextStates(XREL, X1, V1, X2, V2, ACTION):
+def getNextStates(XREL, X1, V1, X2, V2, ACTION, D2, D1, M, A1, A2):
+    if ACTION == D2:
+        act = np.random.normal(ACTION, 0.55)
+    elif ACTION == D1:
+        act = np.random.normal(ACTION, 0.55)
+    elif ACTION == M:
+        act = np.random.normal(ACTION, 0.55)
+    elif ACTION == A1:
+        act = np.random.normal(ACTION, 0.55)
+    elif ACTION == A2:
+        act = np.random.normal(ACTION, 0.55)
+
+
     # 5 HZ
     X1_next = X1 + V1*0.2  # velocity * 0.2 seconds
-    V1_next = V1               # highway car has no acceleration
+    V1_next = V1 + np.random.normal(0, 0.3)            # highway car has no acceleration
 
     # below assumes velocity only changes after 0.2 seconds
-    X2_next = X2 + V2*0.2 + 0.5*ACTION*0.2*0.2  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
-    V2_next = V2 + ACTION*0.2                       # v = v_0 + accel*0.2sec
+    X2_next = X2 + V2*0.2 + 0.5*act*0.2*0.2  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
+    V2_next = V2 + act*0.2                       # v = v_0 + accel*0.2sec
 
     # XREL.append(X1[-1] - length1 - X2[-1])      # valid for all cases when length1 = length2
     XREL_next = X1 - X2      # valid for all cases when length1 = length2
@@ -171,9 +183,6 @@ startlat1 = 1.87    # starting lateral GPS error (m)
 startV1 = 27        # starting velocity (m/s)
 startD1 = 135       # starting distance from end (m)
 length1 = 4.86      # length of vehicle 1
-
-
-
 ###########################Merge Vehicle Parameters################################
 ###################################################################################
 #Merge Car Start State
@@ -184,23 +193,16 @@ startlat2 = 1.87    # starting lateral GPS error (m)
 startV2 = 18        # starting velocity (m/s)
 startD2 = 114.5       # starting distance from end (m)
 length2 = 4.86      # length of vehicle 2
-
-
-
-
 ##############################SIMULATION###################################
 ############################################################################
 x1 = [startX1]
 v1 = [startV1]
-
 x2 = [startX2]
 v2 = [startV2]
 D2 = startD2
-
 # xRel = [x1[0] - length1 - x2[0]]
 xRel = [x1[0] - x2[0]]
 tGap = [xRel[-1]/v1[-1]]
-
 # simulate until reach end distance
 while D2 > 0:
     action = getMergeAction()                    # Will get action from Q table interpolation. Simplified currently.
@@ -230,10 +232,16 @@ def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
     xRel = [x1[0] - x2[0]]
     tau = [getTau(xRel[0],v1[0],v2[0])]
 
+    d2 = -3.92
+    d1 = -1.47
+    m = 0
+    a1 = 1.96
+    a2 = 3.43
+
     while d[-1] > 0:
         state = (tau[-1],v1[-1],v2[-1],d[-1])
         action = getMergeActionInterp(state, interpolator_dict, nA)
-        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action)
+        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action,d2, d1, m, a1, a2)
         x1.append(X1_next)
         v1.append(V1_next)
         x2.append(X2_next)
@@ -253,9 +261,15 @@ def simulate_more(x1,x2,v1,v2,tau,xRel,d):
     xRelmore = xRel
     dmore = d
 
+    d2 = -3.92
+    d1 = -1.47
+    m = 0
+    a1 = 1.96
+    a2 = 3.43
+
     for i in range(15):
         action = 0
-        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action)
+        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action,d2, d1, m, a1, a2)
         x1more.append(X1_next)
         v1more.append(V1_next)
         x2more.append(X2_next)
@@ -384,3 +398,38 @@ length2 = 4.86      # length of vehicle 2
 x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict)
 x1more,x2more,v1more,v2more,xRelmore,taumore,dmore = simulate_more(x1,x2,v1,v2,tau,xRel,d)
 animate(x1more,x2more,taumore,xRelmore,dmore)
+
+
+
+
+# Plot velocity vs time for both vehicles
+time = []
+for i in range(min(len(x1), len(x2))):
+    time.append(i/5.)
+plt.title("Speed of Vehicles vs Time")
+plt.ylabel("Speed (m/s)")
+plt.xlabel("Time (s)")
+plt.plot(time, v1, 'b-', label="Highway Vehicle")
+plt.plot(time, v2, 'r-', label="Merge Vehicle")
+plt.legend()
+plt.show()
+
+plt.title("Time Gap vs Time")
+plt.ylabel("Time Gap (s)")
+plt.xlabel("Time (s)")
+plt.plot(time, tau, 'b-')
+plt.show()
+
+plt.title("Headway vs Time")
+plt.ylabel("Headway (m)")
+plt.xlabel("Time (s)")
+plt.plot(time, xRel, 'b-')
+plt.show()
+
+plt.title("Position of Vehicles vs Time")
+plt.ylabel("Position (m)")
+plt.xlabel("Time (s)")
+plt.plot(time, x1, 'b-', label="Highway Vehicle")
+plt.plot(time, x2, 'r-', label="Merge Vehicle")
+plt.legend()
+plt.show()
