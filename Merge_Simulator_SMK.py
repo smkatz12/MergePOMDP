@@ -10,16 +10,18 @@ from scipy.interpolate import RegularGridInterpolator
 ###################################FUNCTIONS#########################################
 #####################################################################################
 
-def getNextStates(XREL, X1, V1, X2, V2, ACTION, length1):
+def getNextStates(XREL, X1, V1, X2, V2, ACTION):
     # 5 HZ
-    X1.append(X1[-1] + V1[-1]*0.2)  # velocity * 0.2 seconds
-    V1.append(V1[-1])               # highway car has no acceleration
+    X1_next = (X1[-1] + V1[-1]*0.2)  # velocity * 0.2 seconds
+    V1_next = (V1[-1])               # highway car has no acceleration
 
     # below assumes velocity only changes after 0.2 seconds
-    X2.append(X2[-1] + V2[-1]*0.2 + 0.5*ACTION*0.2*0.2)  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
-    V2.append(V2[-1] + ACTION*0.2)                       # v = v_0 + accel*0.2sec
+    X2_next = (X2[-1] + V2[-1]*0.2 + 0.5*ACTION*0.2*0.2)  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
+    V2_next = (V2[-1] + ACTION*0.2)                       # v = v_0 + accel*0.2sec
 
-    XREL.append(X1[-1] - length1 - X2[-1])      # valid for all cases when length1 = length2
+    # XREL.append(X1[-1] - length1 - X2[-1])      # valid for all cases when length1 = length2
+    XREL_next = (X1[-1] - X2[-1])      # valid for all cases when length1 = length2
+    return X1_next, V1_next, X2_next, V2_next, XREL_next
 
 def getMergeAction():
 
@@ -71,10 +73,10 @@ def getMergeActionInterp(state, interpolator_dict, nA):
 # time gap
 def getTau(XREL, V1, V2, tau):
     if XREL[-1] < 0: # Highway in back
-        tau.append(XREL[-1]/V1[-1])
+        tau = XREL/V1
     else:
-        tau.append(XREL[-1]/V1[-1])
-    return tau[-1]
+        tau = XREL/V2
+    return tau
 
 ###########################Import Q Table################################
 #########################################################################
@@ -195,7 +197,8 @@ x2 = [startX2]
 v2 = [startV2]
 D2 = startD2
 
-xRel = [x1[0] - length1 - x2[0]]
+# xRel = [x1[0] - length1 - x2[0]]
+xRel = [x1[0] - x2[0]]
 tGap = [xRel[-1]/v1[-1]]
 
 # simulate until reach end distance
@@ -211,15 +214,37 @@ while D2 > 0:
     state = (tGap[-1],v1[-1],v2[-1],D2)
     action = getMergeActionInterp(state, interpolator_dict, nA)
     # action = getMergeAction()
-    getNextStates(xRel, x1, v1, x2, v2, action, length1)  # updates states
+    getNextStates(xRel, x1, v1, x2, v2, action)  # updates states
     getTau(xRel, v1, v2, tGap)
     D2 = startD1 - x2[-1]                            # 120m - most recent x position of merge car
 
 
+def simulate(startX1,startV1,startX2,startV2,startD)
+    x1[0] = startX1
+    x2[0] = startX2
+    v1[0] = startV1
+    v2[0] = startV2
+    d[0] = startD
+
+    xRel[0] = x1[0] - x2[0]
+    tau[0] = getTau(xRel[0],v1[0],v2[0])
+
+    while d[-1] > 0:
+        X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates()
+        x1.append(X1_next)
+        v1.append(V2_next)
+        x2.append(X2_next)
+        v2.append(V2_next)
+        xRel.append(XREL_next)
+        tau.append(getTau(XREL_next,V1_next,V2_next))
+        d.append(startD - x2[-1])
+
+    return x1,x2,v1,v2,xRel,tau,d
 
 
 ###########################PLOTTING################################
 ###################################################################
+def animate()
 fig = plt.figure()
 #plt.axis('equal')
 ax = fig.add_subplot(111)
