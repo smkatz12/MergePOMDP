@@ -10,7 +10,7 @@ from scipy.interpolate import RegularGridInterpolator
 ###################################FUNCTIONS#########################################
 #####################################################################################
 
-def getNextStates(XREL, X1, V1, X2, V2, ACTION):
+def getNextStates(XREL, X1, V1, X2, V2, ACTION, length1):
     # 5 HZ
     X1.append(X1[-1] + V1[-1]*0.2)  # velocity * 0.2 seconds
     V1.append(V1[-1])               # highway car has no acceleration
@@ -19,7 +19,7 @@ def getNextStates(XREL, X1, V1, X2, V2, ACTION):
     X2.append(X2[-1] + V2[-1]*0.2 + 0.5*ACTION*0.2*0.2)  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
     V2.append(V2[-1] + ACTION*0.2)                       # v = v_0 + accel*0.2sec
 
-    XREL.append(X1[-1] - X2[-1])
+    XREL.append(X1[-1] - length1 - X2[-1])      # valid for all cases when length1 = length2
 
 def getMergeAction():
 
@@ -148,7 +148,6 @@ interpolator_dict = {1:interp_d2, 2:interp_d1, 3:interp_m, 4:interp_a1, 5:interp
 ##########################################################################
 file = "open sky driving"
 df = pd.read_csv(file + ".csv")
-
 #print(df.head())
 #print("\n" + str(columns))
 #print(df)
@@ -169,6 +168,7 @@ startlong1 = -4.86  # starting longitudinal GPS error (m)
 startlat1 = 1.87    # starting lateral GPS error (m)
 startV1 = 27        # starting velocity (m/s)
 startD1 = 135       # starting distance from end (m)
+length1 = 4.86      # length of vehicle 1
 
 
 
@@ -181,7 +181,7 @@ startlong2 = -4.86  # starting longitudinal GPS error (m)
 startlat2 = 1.87    # starting lateral GPS error (m)
 startV2 = 18        # starting velocity (m/s)
 startD2 = 114.5       # starting distance from end (m)
-
+length2 = 4.86      # length of vehicle 2
 
 
 
@@ -195,7 +195,7 @@ x2 = [startX2]
 v2 = [startV2]
 D2 = startD2
 
-xRel = [x1[0] - x2[0]]
+xRel = [x1[0] - length1 - x2[0]]
 tGap = [xRel[-1]/v1[-1]]
 
 # simulate until reach end distance
@@ -211,7 +211,7 @@ while D2 > 0:
     state = (tGap[-1],v1[-1],v2[-1],D2)
     action = getMergeActionInterp(state, interpolator_dict, nA)
     # action = getMergeAction()
-    getNextStates(xRel, x1, v1, x2, v2, action)  # updates states
+    getNextStates(xRel, x1, v1, x2, v2, action, length1)  # updates states
     getTau(xRel, v1, v2, tGap)
     D2 = startD1 - x2[-1]                            # 120m - most recent x position of merge car
 
@@ -223,13 +223,13 @@ while D2 > 0:
 fig = plt.figure()
 #plt.axis('equal')
 ax = fig.add_subplot(111)
-ax.set_xlim(-10, 140)
+ax.set_xlim(-10, 200)
 ax.set_ylim(0, 30)
 ax.set_facecolor('silver')
 
-x = np.linspace(-10, 140)
-y = np.linspace(-10, 80)
-z = np.linspace(80, 140)
+x = np.linspace(-10, 200)
+y = np.linspace(-10, 120)
+z = np.linspace(120, 200)
 laneWidth = 3.7  # meters
 
 plt.plot(x, x - x + 10 + 2*laneWidth, linestyle='-', color='gold', linewidth=2)
@@ -269,11 +269,11 @@ def animate(i):
     patch2.set_xy([x2[i], startY2])  # location
 
     #Grass
-    patch3.set_width(200)
+    patch3.set_width(250)
     patch3.set_height(25)
     patch3.set_xy([-10, 17.51])
 
-    patch4.set_width(200)
+    patch4.set_width(250)
     patch4.set_height(7)
     patch4.set_xy([-10, -2])
 
@@ -285,10 +285,7 @@ def animate(i):
     return patch2, patch1, patch3, patch4, label1, label2
 
 
-anim = animation.FuncAnimation(fig, animate, init_func=init, frames=min(len(x1), len(x2)), interval=200, blit=True)
+anim = animation.FuncAnimation(fig, animate, init_func=init, frames=min(len(x1), len(x2)), interval=100, blit=True)
 
 fig.set_size_inches(12, 6, forward=True)
 plt.show()
-
-
-
