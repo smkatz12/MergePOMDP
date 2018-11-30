@@ -90,136 +90,6 @@ def getTau(XREL, V1, V2):
         tau = XREL/V2
     return tau
 
-###########################Import Q Table################################
-#########################################################################
-# Define state dimensions
-ntau = 46
-nv1 = 5
-nv2 = 14
-nd = 20
-# Define number of actions
-nA = 5
-# Initialize table of zeros
-import_dims = (ntau*nv1*nv2*nd,5)
-q = np.zeros(import_dims)
-with open('q_merge.csv') as csv_file:
-    csv_reader = csv.reader(csv_file, delimiter = ',')
-    r_idx = -1
-    for row in csv_reader:
-        r_idx += 1
-        for i in range(nA):
-            q[r_idx,i] = row[i]
-
-
-###########################Set Things Up For Interpolation################################
-##########################################################################################
-# Reshape to 5D Array - (tau,v1,v2,d,action)
-# q_dims = (ntau,nv1,nv2,nd,nA)
-q_dims = (nA,ntau,nv1,nv2,nd) # Switched nA to the beginning
-# q_r = q.reshape(q_dims)
-# Reshape is giving me issues, so I am just going to write it myself
-# Initialize to zeros
-q_r = np.zeros(q_dims)
-# Fill in q_r
-q_idx = -1
-for i in range(nd):
-    for j in range(nv2):
-        for k in range(nv1):
-            for l in range(ntau):
-                q_idx += 1
-                for m in range(nA):
-                    q_r[m,l,k,j,i] = q[q_idx,m]
-
-# Define variable discretizations
-taus = np.array([-0.8, -0.78, -0.76, -0.74, -0.72, -0.7, -0.68, -0.66, -0.64, -0.62, -0.6, -0.58, -0.56, -0.54, -0.52, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.52, 0.54, 0.6, 0.62, 0.64, 0.66, 0.68, 0.7, 0.72, 0.74, 0.76, 0.78, 0.8, 0.82, 0.84, 0.86, 0.88, 0.9, 0.92, 0.94])
-v1s = np.array([24, 26, 28, 30, 32])
-v2s = np.array([18, 20, 22, 24, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36])
-ds = np.array([0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130])
-# Define Interpolators
-interp_d2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[0,:,:,:,:], method='linear', bounds_error=False)
-interp_d1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[1,:,:,:,:], method='linear', bounds_error=False)
-interp_m = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[2,:,:,:,:], method='linear', bounds_error=False)
-interp_a1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[3,:,:,:,:], method='linear', bounds_error=False)
-interp_a2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[4,:,:,:,:], method='linear', bounds_error=False)
-test_pt = np.array([-0.746,30.1,22.1,36])
-
-# Testing interpolators
-'''
-print(interp_d2(test_pt))
-print(interp_d1(test_pt))
-print(interp_m(test_pt))
-print(interp_a1(test_pt))
-print(interp_a2(test_pt))
-'''
-# Make a dictionary of interpolators to pass into the getMergeActionInterp function
-interpolator_dict = {1:interp_d2, 2:interp_d1, 3:interp_m, 4:interp_a1, 5:interp_a2}
-
-
-
-
-'''
-###########################IMPORT GPS DATA################################
-##########################################################################
-file = "open sky driving"
-df = pd.read_csv(file + ".csv")
-#print(df.head())
-#print("\n" + str(columns))
-#print(df)
-gpsError = {}
-for i in range(len(df)):
-    # dictionary[seconds] = [longitudinal error (m), lateral error (m)]
-    gpsError[str(df.at[i, 'seconds from start'])] = [df.at[i, 'pl_e'], df.at[i, 'pl_n']]
-'''
-
-
-'''
-###########################Highway Vehicle Parameters################################
-#####################################################################################
-#Highway Car Start State
-startX1 = 0         # starting x position
-startY1 = 11        # starting y position
-startlong1 = -4.86  # starting longitudinal GPS error (m)
-startlat1 = 1.87    # starting lateral GPS error (m)
-startV1 = 27        # starting velocity (m/s)
-startD1 = 135       # starting distance from end (m)
-length1 = 4.86      # length of vehicle 1
-###########################Merge Vehicle Parameters################################
-###################################################################################
-#Merge Car Start State
-startX2 = 20.5         # starting x position
-startY2 = 7         # starting y position
-startlong2 = -4.86  # starting longitudinal GPS error (m)
-startlat2 = 1.87    # starting lateral GPS error (m)
-startV2 = 18        # starting velocity (m/s)
-startD2 = 114.5       # starting distance from end (m)
-length2 = 4.86      # length of vehicle 2
-##############################SIMULATION###################################
-############################################################################
-x1 = [startX1]
-v1 = [startV1]
-x2 = [startX2]
-v2 = [startV2]
-D2 = startD2
-# xRel = [x1[0] - length1 - x2[0]]
-xRel = [x1[0] - x2[0]]
-tGap = [xRel[-1]/v1[-1]]
-# simulate until reach end distance
-while D2 > 0:
-    action = getMergeAction()                    # Will get action from Q table interpolation. Simplified currently.
-    getNextStates(xRel, x1, v1, x2, v2, action)  # updates states
-    getTau(xRel, v2, tGap)
-    D2 = 120 - x2[-1]                            # 120m - most recent x position of merge car
-# Try putting in the select action with interpolation!
-while D2 > 0:
-    state = (tGap[-1],v1[-1],v2[-1],D2)
-    action = getMergeActionInterp(state, interpolator_dict, nA)
-    # action = getMergeAction()
-    getNextStates(xRel, x1, v1, x2, v2, action)  # updates states
-    getTau(xRel, v1, v2, tGap)
-    D2 = startD1 - x2[-1]                            # 120m - most recent x position of merge car
-'''
-
-
 def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
     nA = 5
 
@@ -369,6 +239,71 @@ def animate(x1,x2,tau,xRel,dmore):
 
     fig.set_size_inches(12, 6, forward=True)
     plt.show()
+
+
+###########################Import Q Table################################
+#########################################################################
+# Define state dimensions
+ntau = 46
+nv1 = 5
+nv2 = 14
+nd = 20
+# Define number of actions
+nA = 5
+# Initialize table of zeros
+import_dims = (ntau*nv1*nv2*nd,5)
+q = np.zeros(import_dims)
+with open('q_merge.csv') as csv_file:
+    csv_reader = csv.reader(csv_file, delimiter = ',')
+    r_idx = -1
+    for row in csv_reader:
+        r_idx += 1
+        for i in range(nA):
+            q[r_idx,i] = row[i]
+
+
+###########################Set Things Up For Interpolation################################
+##########################################################################################
+# Reshape to 5D Array - (tau,v1,v2,d,action)
+# q_dims = (ntau,nv1,nv2,nd,nA)
+q_dims = (nA,ntau,nv1,nv2,nd) # Switched nA to the beginning
+# q_r = q.reshape(q_dims)
+# Reshape is giving me issues, so I am just going to write it myself
+# Initialize to zeros
+q_r = np.zeros(q_dims)
+# Fill in q_r
+q_idx = -1
+for i in range(nd):
+    for j in range(nv2):
+        for k in range(nv1):
+            for l in range(ntau):
+                q_idx += 1
+                for m in range(nA):
+                    q_r[m,l,k,j,i] = q[q_idx,m]
+
+# Define variable discretizations
+taus = np.array([-0.8, -0.78, -0.76, -0.74, -0.72, -0.7, -0.68, -0.66, -0.64, -0.62, -0.6, -0.58, -0.56, -0.54, -0.52, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.52, 0.54, 0.6, 0.62, 0.64, 0.66, 0.68, 0.7, 0.72, 0.74, 0.76, 0.78, 0.8, 0.82, 0.84, 0.86, 0.88, 0.9, 0.92, 0.94])
+v1s = np.array([24, 26, 28, 30, 32])
+v2s = np.array([18, 20, 22, 24, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36])
+ds = np.array([0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130])
+# Define Interpolators
+interp_d2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[0,:,:,:,:], method='linear', bounds_error=False)
+interp_d1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[1,:,:,:,:], method='linear', bounds_error=False)
+interp_m = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[2,:,:,:,:], method='linear', bounds_error=False)
+interp_a1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[3,:,:,:,:], method='linear', bounds_error=False)
+interp_a2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[4,:,:,:,:], method='linear', bounds_error=False)
+test_pt = np.array([-0.746,30.1,22.1,36])
+
+# Testing interpolators
+'''
+print(interp_d2(test_pt))
+print(interp_d1(test_pt))
+print(interp_m(test_pt))
+print(interp_a1(test_pt))
+print(interp_a2(test_pt))
+'''
+# Make a dictionary of interpolators to pass into the getMergeActionInterp function
+interpolator_dict = {1:interp_d2, 2:interp_d1, 3:interp_m, 4:interp_a1, 5:interp_a2}
 
 
 ###########################Highway Vehicle Parameters################################
