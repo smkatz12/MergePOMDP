@@ -103,7 +103,7 @@ function POMDPs.reward(mdp::MergeMDP, s::Int64, a::Symbol)
     d = s_grid[4]
     if d < dTol # == 0
         # Check for collision
-        if abs(tau) < 0.55
+        if abs(tau) < 0.5
             if tau == 0 # Take care of dividing by zero
                 r += penCollision*20
             else

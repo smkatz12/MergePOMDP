@@ -5,12 +5,15 @@ from matplotlib import animation
 import pandas as pd
 import csv
 from scipy.interpolate import RegularGridInterpolator
+from scipy.stats import norm
+import math
 
 
 ###################################FUNCTIONS#########################################
 #####################################################################################
 
 def getNextStates(XREL, X1, V1, X2, V2, ACTION, D2, D1, M, A1, A2):
+    '''
     if ACTION == D2:
         act = np.random.normal(ACTION, 0.55)
     elif ACTION == D1:
@@ -21,11 +24,23 @@ def getNextStates(XREL, X1, V1, X2, V2, ACTION, D2, D1, M, A1, A2):
         act = np.random.normal(ACTION, 0.55)
     elif ACTION == A2:
         act = np.random.normal(ACTION, 0.55)
+    '''
+
+    if ACTION == D2:
+        act = np.random.normal(ACTION, 0.1)
+    elif ACTION == D1:
+        act = np.random.normal(ACTION, 0.1)
+    elif ACTION == M:
+        act = np.random.normal(ACTION, 0.1)
+    elif ACTION == A1:
+        act = np.random.normal(ACTION, 0.1)
+    elif ACTION == A2:
+        act = np.random.normal(ACTION, 0.1)
 
 
     # 5 HZ
     X1_next = X1 + V1*0.2  # velocity * 0.2 seconds
-    V1_next = V1 + np.random.normal(0, 0.3)            # highway car has no acceleration
+    V1_next = V1 + np.random.normal(0, 0.1)            # highway car has no acceleration
 
     # below assumes velocity only changes after 0.2 seconds
     X2_next = X2 + V2*0.2 + 0.5*act*0.2*0.2  # x = x_0 + velocity*0.2sec + 0.5*accel*0.2sec^2
@@ -48,6 +63,82 @@ def getMergeAction():
 
     action = accel_1
     return action
+
+
+def approx_gaussian(sigma1,sigma2):
+    # First create discrete Gaussian for d
+    min_val = -3*sigma2
+    max_val = 3*sigma2
+    vals = np.linspace(min_val,max_val,11,endpoint=True)
+    d_gaussian = np.zeros(len(vals)-1)
+    for i in range(len(d_gaussian)):
+        d_gaussian[i] = norm.cdf(vals[i+1],loc=0,scale=sigma2) - norm.cdf(vals[i],loc=0,scale=sigma2)
+    d_gaussian = d_gaussian/np.sum(d_gaussian)
+    # Next, create one for tau
+    sigma_tau = math.sqrt(sigma1**2+sigma2**2)
+    min_val = -3*sigma_tau
+    max_val = 3*sigma_tau
+    vals = np.linspace(min_val,max_val,11,endpoint=True)
+    tau_gaussian = np.zeros(len(vals)-1)
+    for i in range(len(tau_gaussian)):
+        tau_gaussian[i] = norm.cdf(vals[i+1],loc=0,scale=sigma_tau) - norm.cdf(vals[i],loc=0,scale=sigma_tau)
+    tau_gaussian = tau_gaussian/np.sum(tau_gaussian)
+    # Combine into one matrix
+    g_approx = np.zeros((len(d_gaussian),len(tau_gaussian)))
+    for i in range(len(d_gaussian)):
+        for j in range(len(tau_gaussian)):
+            g_approx[i][j] = d_gaussian[i]*tau_gaussian[j]
+    return g_approx
+
+
+def getMergeActionInterpBelief(state, interpolator_dict, nA, approx_g, sigma_d, sigma_tau):
+    best_action = 0
+    best_val = -10000000
+
+    dm = state[3]
+    taum = state[0]
+
+    min_d = dm - 3*sigma_d
+    max_d = dm + 3*sigma_d
+    min_tau = taum - 3*sigma_tau
+    max_tau = taum + 3*sigma_tau
+
+    d = np.linspace(min_d,max_d,10)
+    tau = np.linspace(min_tau,max_tau,10)
+
+    for i in range(nA):
+        q_sum = 0
+        for j in range(len(d)):
+            for k in range(len(tau)):
+                curr_state = list(state)
+                curr_state[3] = d[j]
+                curr_state[0] = tau[k]
+                curr_state = tuple(curr_state)
+                interp_a = interpolator_dict[i+1] # Interpolators start at 1
+                curr_val = interp_a(curr_state)
+                q_sum += curr_val*approx_g[j][k]
+        if q_sum > best_val:
+            best_val = q_sum
+            best_action = i+1
+
+    d2 = -3.92
+    d1 = -1.47
+    m = 0
+    a1 = 1.96
+    a2 = 3.43
+
+    # Select acceleration based on based action
+    if best_action == 1:
+        return d2
+    elif best_action == 2:
+        return d1
+    elif best_action == 3:
+        return m
+    elif best_action == 4:
+        return a1
+    else:
+        return a2
+
 
 def getMergeActionInterp(state, interpolator_dict, nA):
 
@@ -90,7 +181,7 @@ def getTau(XREL, V1, V2):
         tau = XREL/V2
     return tau
 
-def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
+def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict,approx_g,sigma1,sigma2):
     nA = 5
 
     x1 = [startX1]
@@ -108,9 +199,16 @@ def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
     a1 = 1.96
     a2 = 3.43
 
+    sigma_d = sigma2
+
     while d[-1] > 0:
         state = (tau[-1],v1[-1],v2[-1],d[-1])
-        action = getMergeActionInterp(state, interpolator_dict, nA)
+        if tau[-1] < 0: # Highway car in back
+            sigma_tau = math.sqrt(sigma1**2+sigma2**2)/v1[-1]
+        else:
+            sigma_tau = math.sqrt(sigma1**2+sigma2**2)/v2[-1]
+        action = getMergeActionInterpBelief(state, interpolator_dict, nA,approx_g,sigma_d,sigma_tau)
+        # print(action)
         X1_next, V1_next, X2_next, V2_next, XREL_next = getNextStates(xRel[-1],x1[-1],v1[-1],x2[-1],v2[-1],action,d2, d1, m, a1, a2)
         x1.append(X1_next)
         v1.append(V1_next)
@@ -119,6 +217,7 @@ def simulate(startX1,startV1,startX2,startV2,startD,interpolator_dict):
         xRel.append(XREL_next)
         tau.append(getTau(XREL_next,V1_next,V2_next))
         d.append(d[-1] - (x2[-1]-x2[-2]))
+    # print(tau[-1])
 
     return x1,x2,v1,v2,xRel,tau,d
 
@@ -253,7 +352,7 @@ nA = 5
 # Initialize table of zeros
 import_dims = (ntau*nv1*nv2*nd,5)
 q = np.zeros(import_dims)
-with open('q_merge.csv') as csv_file:
+with open('q_merge_10000collisionPen.csv') as csv_file:
     csv_reader = csv.reader(csv_file, delimiter = ',')
     r_idx = -1
     for row in csv_reader:
@@ -294,17 +393,11 @@ interp_a1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[3,:,:,:,:], method='li
 interp_a2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[4,:,:,:,:], method='linear', bounds_error=False)
 test_pt = np.array([-0.746,30.1,22.1,36])
 
-# Testing interpolators
-'''
-print(interp_d2(test_pt))
-print(interp_d1(test_pt))
-print(interp_m(test_pt))
-print(interp_a1(test_pt))
-print(interp_a2(test_pt))
-'''
 # Make a dictionary of interpolators to pass into the getMergeActionInterp function
 interpolator_dict = {1:interp_d2, 2:interp_d1, 3:interp_m, 4:interp_a1, 5:interp_a2}
 
+# Get gaussian approximation
+approx_g = approx_gaussian(100,1)
 
 ###########################Highway Vehicle Parameters################################
 #####################################################################################
@@ -313,7 +406,7 @@ startX1 = 0         # starting x position
 startY1 = 11        # starting y position
 startlong1 = -4.86  # starting longitudinal GPS error (m)
 startlat1 = 1.87    # starting lateral GPS error (m)
-startV1 = 27        # starting velocity (m/s)
+startV1 = 29 # 25 # 27        # starting velocity (m/s)
 startD1 = 135       # starting distance from end (m)
 length1 = 4.86      # length of vehicle 1
 
@@ -330,8 +423,54 @@ startV2 = 18        # starting velocity (m/s)
 startD2 = 114.5       # starting distance from end (m)
 length2 = 4.86      # length of vehicle 2
 
-x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict)
+
+###########################IMPORT GPS DATA################################
+##########################################################################
+file = "open_sky_driving"
+df = pd.read_csv(file + ".csv")
+#print(df.head())
+#print("\n" + str(columns))
+#print(df)
+gpsError = {}
+for i in range(len(df)):
+    # dictionary[seconds] = [longitudinal error (m), lateral error (m)]
+    gpsError[df.at[i, 'seconds from start']] = df.at[i, 'pl_e'] # , df.at[i, 'pl_n']]
+
+sigma1 = gpsError[60*50]/5.5
+sigma2 = gpsError[60*1]/5.5
+
+'''
+times = np.array([1,2,4,6,8,10,20,30,50])
+# times = np.array([1,2,4])
+mean_taus = np.zeros(len(times))
+for i in range(len(times)):
+    taus = np.zeros(10)
+    sigma1 = gpsError[60*50]/5.5
+    sigma2 = gpsError[60*times[i]]/5.5
+    for j in range(10):
+        x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict,approx_g,sigma1,sigma2)
+        taus[j] = tau[-1]
+        print(j)
+    mean_taus[i] = np.mean(taus)
+
+plt.title("Final Merge " + '$\\tau$' + " vs Amount of Time Since Last Reset")
+plt.ylabel("Final Merge " + '$\\tau$' + " (s)")
+plt.xlabel("Time Since Last Reset (min)")
+plt.plot(times, mean_taus, 'b-')
+plt.show()
+
+plt.title("Final Merge Time Gap vs Amount of Time Since Last Reset")
+plt.ylabel("Final Merge Time Gap (s)")
+plt.xlabel("Time Since Last Reset (min)")
+plt.plot(times, mean_taus, '-bo')
+plt.show()
+'''
+
+
+x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict,approx_g,sigma1,sigma2)
 x1more,x2more,v1more,v2more,xRelmore,taumore,dmore = simulate_more(x1,x2,v1,v2,tau,xRel,d)
+
+
 animate(x1more,x2more,taumore,xRelmore,dmore)
 
 
@@ -368,3 +507,4 @@ plt.plot(time, x1, 'b-', label="Highway Vehicle")
 plt.plot(time, x2, 'r-', label="Merge Vehicle")
 plt.legend()
 plt.show()
+

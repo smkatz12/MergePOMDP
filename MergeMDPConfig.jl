@@ -16,7 +16,7 @@ export goodPosTol, timeGap, vrelTol, dTol
 
 
 # Output file name
-output_file = "q_merge.csv"
+output_file = "q_merge_20000collisionPen.csv"
 
 # Value iteration parameters
 max_iter = 500
@@ -34,7 +34,7 @@ nA = 5
 accelerations = [-0.4 -0.15 0. 0.2 0.35]*9.81
 
 
-dt = 1 # Make decisions every 0.2 seconds # Assuming keep same acceleration for about a second
+dt = 1 #1 # Make decisions every 0.2 seconds # Assuming keep same acceleration for about a second
 
 accelSigma = 0.5 # About 1 mph
 
@@ -49,14 +49,15 @@ end
 
 # Define rewards
 penActions = [-50 -5 0 -5 -50]
-penCollision = -500
+# penCollision = -500
+penCollision = -20000
 rewardGoodPos = 10000
 
-goodPosTol = 0.05
+goodPosTol = 0.025
 timeGap = 0.6
 
 vrelTol = 1
 
-dTol = 4
+dTol = 20
 
 end # module MergeMDPConfig
