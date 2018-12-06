@@ -352,7 +352,7 @@ nA = 5
 # Initialize table of zeros
 import_dims = (ntau*nv1*nv2*nd,5)
 q = np.zeros(import_dims)
-with open('q_merge_10000collisionPen.csv') as csv_file:
+with open('q_merge_8000collisionPen.csv') as csv_file:
     csv_reader = csv.reader(csv_file, delimiter = ',')
     r_idx = -1
     for row in csv_reader:
@@ -406,7 +406,7 @@ startX1 = 0         # starting x position
 startY1 = 11        # starting y position
 startlong1 = -4.86  # starting longitudinal GPS error (m)
 startlat1 = 1.87    # starting lateral GPS error (m)
-startV1 = 29 # 25 # 27        # starting velocity (m/s)
+startV1 = 29 # 29 # 25 # 27        # starting velocity (m/s)
 startD1 = 135       # starting distance from end (m)
 length1 = 4.86      # length of vehicle 1
 
@@ -436,42 +436,113 @@ for i in range(len(df)):
     # dictionary[seconds] = [longitudinal error (m), lateral error (m)]
     gpsError[df.at[i, 'seconds from start']] = df.at[i, 'pl_e'] # , df.at[i, 'pl_n']]
 
-sigma1 = gpsError[60*50]/5.5
-sigma2 = gpsError[60*1]/5.5
+sigma1 = 0 #gpsError[60*50]/5.5
+sigma2 = 0 #gpsError[60*1]/5.5
 
 '''
-times = np.array([1,2,4,6,8,10,20,30,50])
+pens = np.array([2000,4000,6000,8000,10000,12000,14000,16000,18000,20000])
+tau_pens = np.zeros(len(pens))
+for p in range(len(pens)):
+    fileName = 'q_merge_' + str(pens[p]) + 'collisionPen.csv'
+    ###########################Import Q Table################################
+    #########################################################################
+    # Define state dimensions
+    ntau = 46
+    nv1 = 5
+    nv2 = 14
+    nd = 20
+    # Define number of actions
+    nA = 5
+    # Initialize table of zeros
+    import_dims = (ntau*nv1*nv2*nd,5)
+    q = np.zeros(import_dims)
+    with open(fileName) as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter = ',')
+        r_idx = -1
+        for row in csv_reader:
+            r_idx += 1
+            for i in range(nA):
+                q[r_idx,i] = row[i]
+
+
+    ###########################Set Things Up For Interpolation################################
+    ##########################################################################################
+    # Reshape to 5D Array - (tau,v1,v2,d,action)
+    # q_dims = (ntau,nv1,nv2,nd,nA)
+    q_dims = (nA,ntau,nv1,nv2,nd) # Switched nA to the beginning
+    # q_r = q.reshape(q_dims)
+    # Reshape is giving me issues, so I am just going to write it myself
+    # Initialize to zeros
+    q_r = np.zeros(q_dims)
+    # Fill in q_r
+    q_idx = -1
+    for i in range(nd):
+        for j in range(nv2):
+            for k in range(nv1):
+                for l in range(ntau):
+                    q_idx += 1
+                    for m in range(nA):
+                        q_r[m,l,k,j,i] = q[q_idx,m]                  
+    # Define variable discretizations
+    taus = np.array([-0.8, -0.78, -0.76, -0.74, -0.72, -0.7, -0.68, -0.66, -0.64, -0.62, -0.6, -0.58, -0.56, -0.54, -0.52, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.52, 0.54, 0.6, 0.62, 0.64, 0.66, 0.68, 0.7, 0.72, 0.74, 0.76, 0.78, 0.8, 0.82, 0.84, 0.86, 0.88, 0.9, 0.92, 0.94])
+    v1s = np.array([24, 26, 28, 30, 32])
+    v2s = np.array([18, 20, 22, 24, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36])
+    ds = np.array([0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130])
+    # Define Interpolators
+    interp_d2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[0,:,:,:,:], method='linear', bounds_error=False)
+    interp_d1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[1,:,:,:,:], method='linear', bounds_error=False)
+    interp_m = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[2,:,:,:,:], method='linear', bounds_error=False)
+    interp_a1 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[3,:,:,:,:], method='linear', bounds_error=False)
+    interp_a2 = RegularGridInterpolator((taus,v1s,v2s,ds),q_r[4,:,:,:,:], method='linear', bounds_error=False)
+
+    # Make a dictionary of interpolators to pass into the getMergeActionInterp function
+    interpolator_dict = {1:interp_d2, 2:interp_d1, 3:interp_m, 4:interp_a1, 5:interp_a2}
+
+    taus = np.zeros(20)
+    # Actually do the sim
+    for t in range(20):
+        x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict,approx_g,sigma1,sigma2)
+        taus[t] = tau[-1]
+        print(t)
+    tau_pens[p] = np.mean(taus)
+
+
+plt.title("Collision Penalty Tuning")
+plt.ylabel("Final Merge " + '$\\tau$' + " (s)")
+plt.xlabel("Collision Penalty")
+plt.plot(pens, tau_pens, '-bo')
+plt.show()
+'''
+
+
+times = np.array([0.25,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,10,20,30,40,50])
 # times = np.array([1,2,4])
 mean_taus = np.zeros(len(times))
 for i in range(len(times)):
-    taus = np.zeros(10)
+    taus = np.zeros(20)
     sigma1 = gpsError[60*50]/5.5
     sigma2 = gpsError[60*times[i]]/5.5
-    for j in range(10):
+    for j in range(20):
         x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict,approx_g,sigma1,sigma2)
         taus[j] = tau[-1]
         print(j)
     mean_taus[i] = np.mean(taus)
 
-plt.title("Final Merge " + '$\\tau$' + " vs Amount of Time Since Last Reset")
+plt.title("Final Merge " + '$\\tau$' + " vs Time Since Last Reset")
 plt.ylabel("Final Merge " + '$\\tau$' + " (s)")
-plt.xlabel("Time Since Last Reset (min)")
-plt.plot(times, mean_taus, 'b-')
-plt.show()
-
-plt.title("Final Merge Time Gap vs Amount of Time Since Last Reset")
-plt.ylabel("Final Merge Time Gap (s)")
 plt.xlabel("Time Since Last Reset (min)")
 plt.plot(times, mean_taus, '-bo')
 plt.show()
+
+
 '''
-
-
 x1,x2,v1,v2,xRel,tau,d = simulate(startX1,startV1,startX2,startV2,startD2,interpolator_dict,approx_g,sigma1,sigma2)
 x1more,x2more,v1more,v2more,xRelmore,taumore,dmore = simulate_more(x1,x2,v1,v2,tau,xRel,d)
 
 
 animate(x1more,x2more,taumore,xRelmore,dmore)
+
+pens = np.array([2000,4000,6000,8000,10000,12000,14000,16000,18000,20000])
 
 
 
@@ -507,4 +578,4 @@ plt.plot(time, x1, 'b-', label="Highway Vehicle")
 plt.plot(time, x2, 'r-', label="Merge Vehicle")
 plt.legend()
 plt.show()
-
+'''
